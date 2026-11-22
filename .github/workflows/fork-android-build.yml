@@ -27,13 +27,13 @@ jobs:
           install_jetbrains_jdk: 'true'
           dependency_graph: 'disabled'
 
-      - name: Build Android debug APKs
-        run: ./gradlew androidApp:assembleFdroidDebug androidApp:assembleGoogleDebug -Pci=true -Pkotlin.daemon.useFallbackStrategy=false --parallel --configuration-cache -Dorg.gradle.isolated-projects=false --continue
+      - name: Build F-Droid ARM64 debug APK
+        run: ./gradlew androidApp:assembleFdroidDebug -Pci=true -Pkotlin.daemon.useFallbackStrategy=false --parallel --configuration-cache -Dorg.gradle.isolated-projects=false --continue
 
-      - name: Upload APKs
+      - name: Upload only ARM64 APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: meshtastic-hop-count-debug-apks
-          path: androidApp/build/outputs/apk/*/debug/*.apk
+          name: meshtastic-hop-count-fdroid-arm64
+          path: androidApp/build/outputs/apk/fdroid/debug/*arm64-v8a*.apk
           if-no-files-found: error
           retention-days: 14
