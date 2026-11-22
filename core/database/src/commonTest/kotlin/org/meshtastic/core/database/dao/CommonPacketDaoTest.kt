@@ -462,6 +462,25 @@ abstract class CommonPacketDaoTest {
     }
 
     @Test
+    fun testOrphanReactionConversationScopingMatchesMessageAssociation() {
+        val reaction =
+            ReactionEntity(
+                myNodeNum = myNodeNum,
+                replyId = 1234,
+                userId = "!12345678",
+                emoji = "👍",
+                timestamp = nowMillis,
+                status = MessageStatus.RECEIVED,
+                to = "!42424242",
+                channel = 0,
+            )
+
+        assertTrue(reaction.belongsToContact("0!12345678", myNodeNum))
+        assertFalse(reaction.belongsToContact("1!12345678", myNodeNum))
+        assertFalse(reaction.belongsToContact("0!87654321", myNodeNum))
+    }
+
+    @Test
     fun testOrphanReactionsMoveToTheOriginalMessageWhenItArrives() = runTest {
         createDb()
         val contactKey = testContactKeys.first()

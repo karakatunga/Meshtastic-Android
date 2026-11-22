@@ -90,7 +90,7 @@ data class PacketEntity(
  */
 @Suppress("ReturnCount")
 private fun ReactionEntity.belongsTo(packet: Packet): Boolean =
-    belongsToContact(packet.contact_key, packet.myNodeNum)
+    belongsToContact(packet.contact_key, myNodeNum)
 
 /**
  * Applies the same channel and address rules as [belongsTo] when there is no parent Packet row to inspect.
