@@ -24,6 +24,7 @@ import org.meshtastic.core.database.MeshtasticDatabase
 import org.meshtastic.core.database.entity.MyNodeEntity
 import org.meshtastic.core.database.entity.Packet
 import org.meshtastic.core.database.entity.ReactionEntity
+import org.meshtastic.core.database.entity.belongsToContact
 import org.meshtastic.core.database.getInMemoryDatabaseBuilder
 import org.meshtastic.core.model.DataPacket
 import org.meshtastic.core.model.MessageStatus
