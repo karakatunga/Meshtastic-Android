@@ -729,7 +729,7 @@ private fun OriginalMessageSnippet(
             }
         }
     } else if (replyId != null && message.meshViewReply != null) {
-        val recovered = message.meshViewReply
+        val recovered = checkNotNull(message.meshViewReply)
         Surface(
             modifier = modifier.fillMaxWidth().clickable { onNavigateToOriginalMessage(replyId) }
                 .semantics { isSensitiveData = true },
