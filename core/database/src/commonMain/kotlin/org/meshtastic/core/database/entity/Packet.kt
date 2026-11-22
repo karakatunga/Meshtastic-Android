@@ -98,7 +98,7 @@ private fun ReactionEntity.belongsTo(packet: Packet): Boolean =
  * reactions sent by this device correctly.
  */
 @Suppress("ReturnCount")
-internal fun ReactionEntity.belongsToContact(contactKey: String, currentNodeNum: Int): Boolean {
+fun ReactionEntity.belongsToContact(contactKey: String, currentNodeNum: Int): Boolean {
     if (to == null || userId.isEmpty()) return true
 
     val sender = NodeAddress.fromString(userId)
