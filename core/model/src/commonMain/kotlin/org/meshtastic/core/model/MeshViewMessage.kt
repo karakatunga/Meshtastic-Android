@@ -21,5 +21,5 @@ data class MeshViewMessage(
     val channel: String?,
 ) {
     val formattedTime: String?
-        get() = timestamp?.let(Instant::fromEpochMilliseconds)?.toString()
+        get() = timestamp?.let { Instant.fromEpochMilliseconds(it).toString() }
 }

@@ -150,7 +150,8 @@ class ApiServiceImpl(private val client: HttpClient) : ApiService {
 
     override suspend fun getMeshViewPacket(packetId: Int): MeshViewMessage? {
         val response = client.get("https://meshview.meshtastic.es/api/packets") { parameter("packet_id", packetId.toUInt().toString()) }
-        if (response.status == HttpStatusCode.NotFound || !response.status.isSuccess()) return null
+        if (response.status == HttpStatusCode.NotFound) return null
+        check(response.status.isSuccess()) { "Unexpected HTTP ${response.status} fetching MeshView packet" }
         return decodeMeshViewMessage(response.bodyAsText(), packetId)
     }
 }

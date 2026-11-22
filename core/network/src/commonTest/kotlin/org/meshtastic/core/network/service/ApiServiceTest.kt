@@ -243,4 +243,12 @@ class ApiServiceTest {
             assertEquals("Unsigned ID", packet?.text)
         } finally { client.close() }
     }
+
+    @Test
+    fun `MeshView server errors are surfaced for a later retry`() = runTest {
+        val client = HttpClient(MockEngine { respondError(HttpStatusCode.InternalServerError) })
+        try {
+            assertFailsWith<IllegalStateException> { ApiServiceImpl(client).getMeshViewPacket(123) }
+        } finally { client.close() }
+    }
 }
