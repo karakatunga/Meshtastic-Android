@@ -57,16 +57,49 @@ abstract class CommonPacketRepositoryTest {
     private val dispatchers = CoroutineDispatchers(main = testDispatcher, io = testDispatcher, default = testDispatcher)
 
     protected lateinit var repository: PacketRepositoryImpl
+    protected lateinit var apiService: FakeApiService
 
     @BeforeTest
     fun setupRepo() {
         dbProvider = FakeDatabaseProvider()
-        repository = PacketRepositoryImpl(dbProvider, dispatchers)
+        apiService = FakeApiService()
+        repository = PacketRepositoryImpl(dbProvider, dispatchers, apiService)
     }
 
     @AfterTest
     fun tearDown() {
         dbProvider.close()
+    }
+
+    @Test
+    fun `MeshView message lookups cache successful results and misses`() = runTest(testDispatcher) {
+        var requestedId = 0
+        apiService.meshViewPacket = { id ->
+            requestedId = id
+            org.meshtastic.core.model.MeshViewMessage(id, "Recovered", "!12345678", 1_700_000_000_000L, "LongFast")
+        }
+
+        val first = repository.getMeshViewMessage(7654321)
+        val second = repository.getMeshViewMessage(7654321)
+
+        assertEquals(7654321, requestedId)
+        assertEquals("Recovered", first?.text)
+        assertEquals(first, second)
+        assertEquals(1, apiService.meshViewPacketCalls)
+
+        apiService.meshViewPacket = { null }
+        assertNull(repository.getMeshViewMessage(7654322))
+        assertNull(repository.getMeshViewMessage(7654322))
+        assertEquals(2, apiService.meshViewPacketCalls)
+    }
+
+    @Test
+    fun `MeshView connection failures are not cached`() = runTest(testDispatcher) {
+        apiService.meshViewPacket = { error("offline") }
+
+        assertNull(repository.getMeshViewMessage(7654323))
+        assertNull(repository.getMeshViewMessage(7654323))
+        assertEquals(2, apiService.meshViewPacketCalls)
     }
 
     @Test

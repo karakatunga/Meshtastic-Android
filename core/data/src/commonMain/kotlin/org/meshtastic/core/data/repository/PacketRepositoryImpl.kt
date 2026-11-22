@@ -63,7 +63,7 @@ import org.meshtastic.core.repository.PacketRepository as SharedPacketRepository
 class PacketRepositoryImpl(
     private val dbManager: DatabaseProvider,
     private val dispatchers: CoroutineDispatchers,
-    private val apiService: ApiService? = null,
+    private val apiService: ApiService,
 ) :
     SharedPacketRepository {
 
@@ -71,7 +71,7 @@ class PacketRepositoryImpl(
 
     override suspend fun getMeshViewMessage(packetId: Int): MeshViewMessage? {
         if (meshViewCache.containsKey(packetId)) return meshViewCache[packetId]
-        val result = try { apiService?.getMeshViewPacket(packetId) }
+        val result = try { apiService.getMeshViewPacket(packetId) }
         catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (_: Exception) { return null } // Retry transient connection failures on a later emission.
         meshViewCache[packetId] = result
