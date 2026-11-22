@@ -648,6 +648,17 @@ interface PacketDao {
 
     @Update suspend fun update(reaction: ReactionEntity)
 
+    /** Finds reactions targeting a message ID even when the original message packet is missing. */
+    @Query(
+        """
+        SELECT * FROM reactions
+        WHERE reply_id = :replyId
+        AND (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
+        """,
+    )
+    suspend fun findReactionsByReplyId(replyId: Int): List<ReactionEntity>
+
+
     @Query(
         """
         SELECT * FROM reactions 
