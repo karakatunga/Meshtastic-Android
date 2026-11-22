@@ -687,23 +687,18 @@ private fun OriginalMessageSnippet(
     modifier: Modifier = Modifier,
 ) {
     val originalMessage = message.originalMessage
+    val replyId = message.replyId?.takeIf { it != 0 }
     if (originalMessage != null && originalMessage.packetId != 0) {
         val originalMessageNode = if (originalMessage.fromLocal) ourNode else originalMessage.node
-        // Same node-tinted treatment as the bubble (keeps onSurface text AA), but at the emphasized tint so the quoted
-        // header still reads as distinct from the bubble body below it.
         val replyContainerColor =
             nodeTintedContainer(Color(originalMessageNode.colors.second), fraction = NODE_TINT_EMPHASIZED)
         val replyContentColor = MaterialTheme.colorScheme.onSurface
-        // Rectangle shape — the outer message bubble's Surface clips to its
-        // rounded corners, so the reply header inherits the correct top radii
-        // automatically and stays square on the bottom where body text follows.
         Surface(
             modifier =
-            modifier
-                .fillMaxWidth()
-                .clickable { onNavigateToOriginalMessage(originalMessage.packetId) }
-                // clickable makes this its own a11y node, so the bubble's isSensitiveData doesn't reach it
-                .semantics { isSensitiveData = true },
+                modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToOriginalMessage(originalMessage.packetId) }
+                    .semantics { isSensitiveData = true },
             contentColor = replyContentColor,
             color = replyContainerColor,
             shape = RectangleShape,
@@ -727,6 +722,35 @@ private fun OriginalMessageSnippet(
                 )
                 Text(
                     text = originalMessage.text,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    } else if (replyId != null) {
+        Surface(
+            modifier =
+                modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigateToOriginalMessage(replyId) }
+                    .semantics { isSensitiveData = true },
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RectangleShape,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    MeshtasticIcons.FormatQuote,
+                    contentDescription = stringResource(Res.string.reply),
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = "Original message not received · ID $replyId",
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
