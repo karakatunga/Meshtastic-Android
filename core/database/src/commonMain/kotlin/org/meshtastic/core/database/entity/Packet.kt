@@ -53,6 +53,8 @@ data class PacketEntity(
             snr = snr,
             rssi = rssi,
             hopsAway = hopsAway,
+            hopStart = data.hopStart,
+            hopLimit = data.hopLimit,
             read = read,
             status = data.status,
             routingError = routingError,
