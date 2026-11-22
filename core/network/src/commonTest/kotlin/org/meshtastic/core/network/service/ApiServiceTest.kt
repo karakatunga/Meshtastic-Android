@@ -251,4 +251,23 @@ class ApiServiceTest {
             assertFailsWith<IllegalStateException> { ApiServiceImpl(client).getMeshViewPacket(123) }
         } finally { client.close() }
     }
+
+    @Test
+    fun `MeshView raw payload is used as recovered message text`() = runTest {
+        val client = HttpClient(MockEngine {
+            respond(
+                content = """{"packets":[{"id":777659848,"from_node_id":"!12345678","to_node_id":4294967295,"channel":"SFNarrow","portnum":1,"payload":"Ya noche","import_time_us":1730000000000000}]}""",
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        })
+        try {
+            val packet = ApiServiceImpl(client).getMeshViewPacket(777659848)
+            assertEquals("Ya noche", packet?.text)
+            assertEquals("!12345678", packet?.sender)
+            assertEquals("SFNarrow", packet?.channel)
+            assertEquals(1_730_000_000_000L, packet?.timestamp)
+        } finally {
+            client.close()
+        }
+    }
 }

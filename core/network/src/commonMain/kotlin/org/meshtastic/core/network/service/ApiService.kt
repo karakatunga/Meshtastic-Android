@@ -175,9 +175,9 @@ internal fun decodeMeshViewMessage(body: String, requestedPacketId: Int): MeshVi
     val packet = candidates.firstOrNull { it.longValue("packet_id", "packetId", "id")?.toInt() == requestedPacketId }
         ?: candidates.firstOrNull()?.takeIf { candidates.size == 1 } ?: return null
     val nested = sequenceOf("decoded", "data", "payload", "text_message").mapNotNull { packet[it] as? JsonObject }.toList()
-    val textValue = (sequenceOf(packet) + nested.asSequence()).mapNotNull { it.value("text", "message", "message_text", "payload_text").stringValue() }.firstOrNull { it.isNotBlank() } ?: return null
+    val textValue = (sequenceOf(packet) + nested.asSequence()).mapNotNull { it.value("text", "message", "message_text", "payload_text", "payload").stringValue() }.firstOrNull { it.isNotBlank() } ?: return null
     val sender = packet.value("from_name", "sender_name", "sender", "from", "from_node_id", "fromId").stringValue()
-    val rawTime = packet.longValue("rx_time", "timestamp", "time", "received_at", "created_at")
+    val rawTime = packet.longValue("rx_time", "timestamp", "time", "received_at", "created_at", "import_time_us")
     val timestamp = rawTime?.let { when { it > 1_000_000_000_000_000L -> it / 1_000L; it > 100_000_000_000L -> it; else -> it * 1_000L } }
     val channel = packet.value("channel_name", "channel", "channel_index").stringValue()
     return MeshViewMessage(requestedPacketId, textValue, sender, timestamp, channel)
