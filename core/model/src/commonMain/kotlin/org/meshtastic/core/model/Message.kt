@@ -320,6 +320,8 @@ data class Message(
     val translatedText: String? = null,
     /** Whether the bubble currently displays [translatedText] instead of [text]. */
     val showTranslated: Boolean = false,
+    /** Missing reply parent recovered from MeshView; kept separate from locally received message history. */
+    val meshViewReply: MeshViewMessage? = null,
 ) {
     /**
      * Epoch millis behind the displayed [time]: mesh time when the radio stamped one, otherwise the local

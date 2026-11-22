@@ -20,6 +20,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
+import androidx.paging.map
 import androidx.paging.cachedIn
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.FlowPreview
@@ -227,6 +228,7 @@ class MessageViewModel(
             .flatMapLatest { (contactKey, includeFiltered) ->
                 packetRepository.getMessagesFromPaged(contactKey, includeFiltered, ::getNode)
             }
+            .map { pagingData -> pagingData.map { attachMeshViewReply(it) } }
             .cachedIn(viewModelScope)
 
     val frequentEmojis: List<String>
@@ -369,6 +371,14 @@ class MessageViewModel(
             contactKeyForPagedMessages.value = contactKey
         }
         return packetRepository.getMessagesFrom(contactKey, limit = limit, getNode = ::getNode)
+            .map { messages -> messages.map { attachMeshViewReply(it) } }
+    }
+
+    private suspend fun attachMeshViewReply(message: Message): Message {
+        val replyId = message.replyId?.takeIf { it != 0 }
+        if (message.originalMessage != null || replyId == null) return message
+        val recovered = packetRepository.getMeshViewMessage(replyId) ?: return message
+        return message.copy(meshViewReply = recovered)
     }
 
     fun toggleShowQuickChat() {

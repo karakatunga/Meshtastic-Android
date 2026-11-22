@@ -728,6 +728,22 @@ private fun OriginalMessageSnippet(
                 )
             }
         }
+    } else if (replyId != null && message.meshViewReply != null) {
+        val recovered = message.meshViewReply
+        Surface(
+            modifier = modifier.fillMaxWidth().clickable { onNavigateToOriginalMessage(replyId) }
+                .semantics { isSensitiveData = true },
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            shape = RectangleShape,
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                Text("Recovered from MeshView · ID $replyId", style = MaterialTheme.typography.labelSmall)
+                Text(recovered.text, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(listOfNotNull(recovered.sender, recovered.channel?.let { "channel $it" }, recovered.timestamp?.toString()).joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall)
+            }
+        }
     } else if (replyId != null) {
         Surface(
             modifier =
