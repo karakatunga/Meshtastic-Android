@@ -63,4 +63,6 @@ data class OrphanReactionGroup(
     val replyId: Int,
     val timestamp: Long,
     val reactions: List<Reaction>,
+    /** Message content fetched from MeshView, when available. */
+    val meshViewMessage: MeshViewMessage? = null,
 )

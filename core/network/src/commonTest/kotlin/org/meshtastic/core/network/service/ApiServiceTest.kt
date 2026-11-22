@@ -201,4 +201,30 @@ class ApiServiceTest {
     fun `firmware release manifest decoder rejects malformed JSON`() {
         assertFailsWith<SerializationException> { decodeFirmwareReleaseManifest("not-json") }
     }
+
+    @Test
+    fun `MeshView packet lookup decodes a text packet by id over HTTP`() = runTest {
+        var requested: String? = null
+        val engine = MockEngine { request ->
+            requested = request.url.toString()
+            respond(content = """[{"packet_id":7654321,"from_node_id":"!abcd1234","rx_time":1730000000,"channel":"LongFast","decoded":{"text":"Recovered text"}}]""",
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        }
+        val client = HttpClient(engine)
+        try {
+            val packet = ApiServiceImpl(client).getMeshViewPacket(7654321)
+            assertEquals("https://meshview.meshtastic.es/api/packets?packet_id=7654321", requested)
+            assertEquals(7654321, packet?.packetId)
+            assertEquals("Recovered text", packet?.text)
+            assertEquals("!abcd1234", packet?.sender)
+            assertEquals(1_730_000_000_000L, packet?.timestamp)
+            assertEquals("LongFast", packet?.channel)
+        } finally { client.close() }
+    }
+
+    @Test
+    fun `MeshView empty response is treated as missing packet`() = runTest {
+        val client = HttpClient(MockEngine { respond(content = "[]") })
+        try { assertNull(ApiServiceImpl(client).getMeshViewPacket(123)) } finally { client.close() }
+    }
 }

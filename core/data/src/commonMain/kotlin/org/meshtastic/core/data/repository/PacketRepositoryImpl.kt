@@ -41,6 +41,7 @@ import org.meshtastic.core.model.ContactSettings
 import org.meshtastic.core.model.DataPacket
 import org.meshtastic.core.model.Message
 import org.meshtastic.core.model.MessageStatus
+import org.meshtastic.core.model.MeshViewMessage
 import org.meshtastic.core.model.Node
 import org.meshtastic.core.model.NodeAddress
 import org.meshtastic.core.model.OrphanReactionGroup
@@ -51,6 +52,7 @@ import org.meshtastic.core.repository.PersistedReaction
 import org.meshtastic.core.repository.PersistedReactionId
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
+import org.meshtastic.core.network.service.ApiService
 import org.meshtastic.core.database.entity.ContactSettings as ContactSettingsEntity
 import org.meshtastic.core.database.entity.Packet as RoomPacket
 import org.meshtastic.core.database.entity.ReactionEntity as RoomReaction
@@ -58,8 +60,23 @@ import org.meshtastic.core.repository.PacketRepository as SharedPacketRepository
 
 @Suppress("TooManyFunctions", "LongParameterList")
 @Single
-class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val dispatchers: CoroutineDispatchers) :
+class PacketRepositoryImpl(
+    private val dbManager: DatabaseProvider,
+    private val dispatchers: CoroutineDispatchers,
+    private val apiService: ApiService? = null,
+) :
     SharedPacketRepository {
+
+    private val meshViewCache = mutableMapOf<Int, MeshViewMessage?>()
+
+    override suspend fun getMeshViewMessage(packetId: Int): MeshViewMessage? {
+        if (meshViewCache.containsKey(packetId)) return meshViewCache[packetId]
+        val result = try { apiService?.getMeshViewPacket(packetId) }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { return null } // Retry transient connection failures on a later emission.
+        meshViewCache[packetId] = result
+        return result
+    }
 
     override fun getWaypoints(): Flow<List<DataPacket>> = dbManager
         .observeCurrentDb("PacketRepository.getWaypoints") { db -> db.packetDao().getAllWaypointsFlow() }

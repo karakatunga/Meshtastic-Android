@@ -418,11 +418,19 @@ private fun OrphanReactionPlaceholder(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            val recovered = group.meshViewMessage
             Text(
-                text = "Original message not received · ID ${group.replyId}",
+                text = if (recovered == null) "Original message not received · ID ${group.replyId}"
+                    else "Recovered from MeshView · ID ${recovered.packetId}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (recovered != null) {
+                Text(text = recovered.text, style = MaterialTheme.typography.bodyMedium)
+                val details = listOfNotNull(recovered.sender, recovered.channel?.let { "channel $it" }, recovered.timestamp?.toString())
+                if (details.isNotEmpty()) Text(details.joinToString(" · "), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             ReactionRow(
                 reactions = group.reactions,
                 myId = myId,

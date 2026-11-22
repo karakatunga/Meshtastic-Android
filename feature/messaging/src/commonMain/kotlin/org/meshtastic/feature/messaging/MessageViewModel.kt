@@ -210,6 +210,7 @@ class MessageViewModel(
         contactKeyForPagedMessages
             .filterNotNull()
             .flatMapLatest { contactKey -> packetRepository.getOrphanReactions(contactKey, ::getNode) }
+            .mapLatest { groups -> groups.map { group -> group.copy(meshViewMessage = packetRepository.getMeshViewMessage(group.replyId)) } }
             .stateInWhileSubscribed(emptyList())
 
     private val pagedMessagesForContactKey: Flow<PagingData<Message>> =
