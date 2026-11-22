@@ -107,6 +107,9 @@ interface ApiService {
      * Fetches the MQTT root directory (community roots, subdivision neighbors and geocoder segment names) the topic
      * finder places a user with. Decodes directly to the same model the bundled asset seed uses.
      */
+    /** Fetches a missing text packet from MeshView using HTTP only. */
+    suspend fun getMeshViewPacket(packetId: Int): MeshViewMessage?
+
     suspend fun getMqttRoots(): MqttRootsResponse
 }
 
