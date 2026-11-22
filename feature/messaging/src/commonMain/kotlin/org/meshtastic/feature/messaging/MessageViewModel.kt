@@ -45,6 +45,7 @@ import org.meshtastic.core.model.ContactSettings
 import org.meshtastic.core.model.Message
 import org.meshtastic.core.model.Node
 import org.meshtastic.core.model.NodeAddress
+import org.meshtastic.core.model.OrphanReactionGroup
 import org.meshtastic.core.repository.ActiveConversationTracker
 import org.meshtastic.core.repository.ConnectionStateProvider
 import org.meshtastic.core.repository.CustomEmojiPrefs
@@ -203,6 +204,14 @@ class MessageViewModel(
         packetRepository.getContactSettings().stateInWhileSubscribed(initialValue = emptyMap())
 
     private val contactKeyForPagedMessages: MutableStateFlow<String?> = MutableStateFlow(null)
+
+    /** Reactions waiting for an original packet; the flow follows conversation and active database changes. */
+    val orphanReactions: StateFlow<List<OrphanReactionGroup>> =
+        contactKeyForPagedMessages
+            .filterNotNull()
+            .flatMapLatest { contactKey -> packetRepository.getOrphanReactions(contactKey, ::getNode) }
+            .stateInWhileSubscribed(emptyList())
+
     private val pagedMessagesForContactKey: Flow<PagingData<Message>> =
         combine(contactKeyForPagedMessages.filterNotNull(), _showFiltered, contactSettings) {
                 contactKey,

@@ -33,6 +33,7 @@ import org.meshtastic.core.database.DatabaseProvider
 import org.meshtastic.core.database.dao.NodeInfoDao
 import org.meshtastic.core.database.dao.PacketDao
 import org.meshtastic.core.database.entity.PacketEntity
+import org.meshtastic.core.database.entity.belongsToContact
 import org.meshtastic.core.database.entity.toReaction
 import org.meshtastic.core.database.retryOnDbPoolFailure
 import org.meshtastic.core.di.CoroutineDispatchers
@@ -42,6 +43,7 @@ import org.meshtastic.core.model.Message
 import org.meshtastic.core.model.MessageStatus
 import org.meshtastic.core.model.Node
 import org.meshtastic.core.model.NodeAddress
+import org.meshtastic.core.model.OrphanReactionGroup
 import org.meshtastic.core.model.Reaction
 import org.meshtastic.core.repository.PersistedPacket
 import org.meshtastic.core.repository.PersistedPacketId
@@ -242,6 +244,36 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
         getNode: suspend (String?) -> Node,
     ): Flow<PagingData<Message>> =
         pagedMessages(contactKey, getNode) { dao -> dao.getMessagesFromPaged(contactKey, includeFiltered) }
+
+    override fun getOrphanReactions(
+        contact: String,
+        getNode: suspend (String?) -> Node,
+    ): Flow<List<OrphanReactionGroup>> =
+        dbManager
+            .observeCurrentDb("PacketRepository.getOrphanReactions") { db ->
+                val dao = db.packetDao()
+                dao.getOrphanReactionsForContact(contact).map { reactions -> dao to reactions }
+            }
+            .mapLatest { (dao, rows) ->
+                val currentNodeNum = dao.getMyNodeNum() ?: 0
+                val cachedGetNode = memoize(getNode)
+                rows
+                    .filter { it.belongsToContact(contact, currentNodeNum) }
+                    // Legacy node-0 rows can coexist with the active node's row. Prefer the active row before
+                    // deduplicating, matching PacketEntity.toMessage's normal reaction relation.
+                    .sortedBy { it.myNodeNum == 0 }
+                    .distinctBy { Triple(it.replyId, it.userId, it.emoji) }
+                    .map { it.toReaction(cachedGetNode) }
+                    .groupBy { it.replyId }
+                    .map { (replyId, grouped) ->
+                        OrphanReactionGroup(
+                            replyId = replyId,
+                            timestamp = grouped.maxOf { it.timestamp },
+                            reactions = grouped,
+                        )
+                    }
+                    .sortedByDescending { it.timestamp }
+            }
 
     private fun pagedMessages(
         contactKey: String,

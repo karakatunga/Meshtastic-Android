@@ -23,6 +23,7 @@ import org.meshtastic.core.model.DataPacket
 import org.meshtastic.core.model.Message
 import org.meshtastic.core.model.MessageStatus
 import org.meshtastic.core.model.Node
+import org.meshtastic.core.model.OrphanReactionGroup
 import org.meshtastic.core.model.Reaction
 import org.meshtastic.proto.MeshPacket
 
@@ -301,6 +302,15 @@ interface PacketRepository {
 
     /** Finds reactions targeting an original message ID, whether or not that message is stored locally. */
     suspend fun findReactionsByReplyId(replyId: Int): List<Reaction>
+
+    /**
+     * Reactive groups of reactions whose original message is missing from [contact].
+     * Groups disappear when the original message arrives and its normal message relation takes over.
+     */
+    fun getOrphanReactions(
+        contact: String,
+        getNode: suspend (String?) -> Node,
+    ): Flow<List<OrphanReactionGroup>>
 
     /**
      * Updates the Store-and-Forward PlusPlus (SFPP) status for packets.

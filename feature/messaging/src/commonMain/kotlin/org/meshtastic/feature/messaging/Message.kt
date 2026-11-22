@@ -174,6 +174,7 @@ fun MessageScreen(
     val channels by viewModel.channels.collectAsStateWithLifecycle()
     val quickChatActions by viewModel.quickChatActions.collectAsStateWithLifecycle(initialValue = emptyList())
     val pagedMessages = viewModel.getMessagesFromPaged(contactKey).collectAsLazyPagingItems()
+    val orphanReactions by viewModel.orphanReactions.collectAsStateWithLifecycle()
     val contactSettings by viewModel.contactSettings.collectAsStateWithLifecycle(initialValue = emptyMap())
     val homoglyphEncodingEnabled by viewModel.homoglyphEncodingEnabled.collectAsStateWithLifecycle(initialValue = false)
 
@@ -527,6 +528,7 @@ fun MessageScreen(
                     nodes = nodes,
                     ourNode = ourNode,
                     messages = pagedMessages,
+                    orphanReactions = orphanReactions,
                     selectedIds = selectedMessageIds,
                     contactKey = contactKey,
                     firstUnreadMessageUuid = firstUnreadMessageUuid,

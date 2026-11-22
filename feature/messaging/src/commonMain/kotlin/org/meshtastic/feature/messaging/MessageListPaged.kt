@@ -17,6 +17,7 @@
 package org.meshtastic.feature.messaging
 
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,6 +28,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -63,6 +67,7 @@ import org.meshtastic.core.model.ContactKey
 import org.meshtastic.core.model.Message
 import org.meshtastic.core.model.Node
 import org.meshtastic.core.model.NodeAddress
+import org.meshtastic.core.model.OrphanReactionGroup
 import org.meshtastic.core.model.Reaction
 import org.meshtastic.core.model.hasDisplayName
 import org.meshtastic.core.ui.component.ListScrollbar
@@ -70,6 +75,7 @@ import org.meshtastic.feature.messaging.component.DateSeparator
 import org.meshtastic.feature.messaging.component.MessageItem
 import org.meshtastic.feature.messaging.component.MessageStatusDialog
 import org.meshtastic.feature.messaging.component.ReactionDialog
+import org.meshtastic.feature.messaging.component.ReactionRow
 import org.meshtastic.feature.messaging.component.UnreadMessagesDivider
 import kotlin.math.abs
 
@@ -103,6 +109,7 @@ internal data class MessageListPagedState(
     val nodes: List<Node>,
     val ourNode: Node?,
     val messages: LazyPagingItems<Message>,
+    val orphanReactions: List<OrphanReactionGroup> = emptyList(),
     val selectedIds: MutableState<Set<Long>>,
     val contactKey: String,
     val firstUnreadMessageUuid: Long? = null,
@@ -346,6 +353,30 @@ private fun MessageListPagedContent(
                 }
             }
 
+            // Orphan reactions are real conversation rows, but are not persisted as synthetic messages.
+            // When the parent packet arrives, the DAO flow drops these rows while PacketEntity's relation
+            // exposes the same reactions on the original message.
+            items(
+                count = state.orphanReactions.size,
+                key = { index -> "orphan-reaction-${state.orphanReactions[index].replyId}" },
+                contentType = { "orphan-reaction" },
+            ) { index ->
+                val orphan = state.orphanReactions[index]
+                OrphanReactionPlaceholder(
+                    group = orphan,
+                    myId = state.ourNode?.user?.id,
+                    canReact = state.canReact,
+                    onSendReaction = { emoji ->
+                        val alreadyReacted = orphan.reactions.any { reaction ->
+                            (reaction.user.id == state.ourNode?.user?.id ||
+                                reaction.user.id == NodeAddress.ID_LOCAL) && reaction.emoji == emoji
+                        }
+                        if (!alreadyReacted) handlers.onSendReaction(emoji, orphan.replyId)
+                    },
+                    onShowReactions = { onShowReactions(orphan.reactions) },
+                )
+            }
+
             // Loading indicator at the end (top when reversed) when loading more items
             state.messages.apply {
                 when {
@@ -363,6 +394,43 @@ private fun MessageListPagedContent(
             }
         }
         ListScrollbar(listState)
+    }
+}
+
+/**
+ * Visual placeholder for an absent parent packet. Reactions stay interactive and use the same reaction dialog
+ * and duplicate-prevention path as reactions attached to a received message.
+ */
+@Composable
+private fun OrphanReactionPlaceholder(
+    group: OrphanReactionGroup,
+    myId: String?,
+    canReact: Boolean,
+    onSendReaction: (String) -> Unit,
+    onShowReactions: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "Original message not received · ID ${group.replyId}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            ReactionRow(
+                reactions = group.reactions,
+                myId = myId,
+                canReact = canReact,
+                onSendReaction = onSendReaction,
+                onShowReactions = onShowReactions,
+            )
+        }
     }
 }
 
