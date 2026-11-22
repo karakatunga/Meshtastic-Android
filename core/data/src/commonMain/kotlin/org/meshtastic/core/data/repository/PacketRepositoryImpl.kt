@@ -416,6 +416,9 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
     override suspend fun findReactionsWithId(packetId: Int): List<Reaction> =
         dbManager.withReadDb { it.packetDao().findReactionsWithId(packetId) }.toReaction { null }
 
+    override suspend fun findReactionsByReplyId(replyId: Int): List<Reaction> =
+        dbManager.withReadDb { it.packetDao().findReactionsByReplyId(replyId) }.toReaction { null }
+
     override suspend fun updateSFPPStatus(
         packetId: Int,
         from: Int,
