@@ -740,7 +740,7 @@ private fun OriginalMessageSnippet(
             Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                 Text("Recovered from MeshView · ID $replyId", style = MaterialTheme.typography.labelSmall)
                 Text(recovered.text, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(listOfNotNull(recovered.sender, recovered.channel?.let { "channel $it" }, recovered.timestamp?.toString()).joinToString(" · "),
+                Text(listOfNotNull(recovered.sender, recovered.channel?.let { "channel $it" }, recovered.formattedTime).joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall)
             }
         }

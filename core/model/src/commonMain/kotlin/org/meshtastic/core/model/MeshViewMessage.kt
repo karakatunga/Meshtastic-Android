@@ -8,6 +8,8 @@
  */
 package org.meshtastic.core.model
 
+import kotlinx.datetime.Instant
+
 /** A text packet recovered from MeshView; external history, never a locally received radio packet. */
 data class MeshViewMessage(
     val packetId: Int,
@@ -17,4 +19,7 @@ data class MeshViewMessage(
     val timestamp: Long?,
     /** Channel name or numeric channel index as returned by MeshView. */
     val channel: String?,
-)
+) {
+    val formattedTime: String?
+        get() = timestamp?.let(Instant::fromEpochMilliseconds)?.toString()
+}

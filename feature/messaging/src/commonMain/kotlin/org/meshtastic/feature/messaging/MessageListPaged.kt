@@ -427,7 +427,7 @@ private fun OrphanReactionPlaceholder(
             )
             if (recovered != null) {
                 Text(text = recovered.text, style = MaterialTheme.typography.bodyMedium)
-                val details = listOfNotNull(recovered.sender, recovered.channel?.let { "channel $it" }, recovered.timestamp?.toString())
+                val details = listOfNotNull(recovered.sender, recovered.channel?.let { "channel $it" }, recovered.formattedTime)
                 if (details.isNotEmpty()) Text(details.joinToString(" · "), style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
