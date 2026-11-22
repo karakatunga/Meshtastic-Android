@@ -149,7 +149,7 @@ class ApiServiceImpl(private val client: HttpClient) : ApiService {
     override suspend fun getMqttRoots(): MqttRootsResponse = client.get("resource/mqttRoots").body()
 
     override suspend fun getMeshViewPacket(packetId: Int): MeshViewMessage? {
-        val response = client.get("https://meshview.meshtastic.es/api/packets") { parameter("packet_id", packetId) }
+        val response = client.get("https://meshview.meshtastic.es/api/packets") { parameter("packet_id", packetId.toUInt().toString()) }
         if (response.status == HttpStatusCode.NotFound || !response.status.isSuccess()) return null
         return decodeMeshViewMessage(response.bodyAsText(), packetId)
     }

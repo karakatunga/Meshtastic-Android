@@ -227,4 +227,20 @@ class ApiServiceTest {
         val client = HttpClient(MockEngine { respond(content = "[]") })
         try { assertNull(ApiServiceImpl(client).getMeshViewPacket(123)) } finally { client.close() }
     }
+
+    @Test
+    fun `MeshView lookup sends Meshtastic packet ids as unsigned values`() = runTest {
+        var requested: String? = null
+        val client = HttpClient(MockEngine { request ->
+            requested = request.url.toString()
+            respond(content = """[{"packet_id":4294967295,"text":"Unsigned ID"}]""",
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        })
+        try {
+            val packet = ApiServiceImpl(client).getMeshViewPacket(-1)
+            assertEquals("https://meshview.meshtastic.es/api/packets?packet_id=4294967295", requested)
+            assertEquals(-1, packet?.packetId)
+            assertEquals("Unsigned ID", packet?.text)
+        } finally { client.close() }
+    }
 }
