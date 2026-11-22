@@ -462,6 +462,48 @@ abstract class CommonPacketDaoTest {
     }
 
     @Test
+    fun testOrphanReactionsMoveToTheOriginalMessageWhenItArrives() = runTest {
+        createDb()
+        val contactKey = testContactKeys.first()
+        val replyId = 987654321
+        val reaction =
+            ReactionEntity(
+                myNodeNum = myNodeNum,
+                replyId = replyId,
+                userId = NodeAddress.ID_LOCAL,
+                emoji = "👍",
+                timestamp = nowMillis,
+            )
+        packetDao.insert(reaction)
+
+        val beforeOriginalArrives = packetDao.getOrphanReactionsForContact(contactKey).first()
+        assertTrue(beforeOriginalArrives.any { it.replyId == replyId })
+
+        packetDao.insert(
+            Packet(
+                uuid = 0L,
+                myNodeNum = myNodeNum,
+                port_num = PortNum.TEXT_MESSAGE_APP.value,
+                contact_key = contactKey,
+                received_time = nowMillis + 1,
+                read = true,
+                data = DataPacket(
+                    to = NodeAddress.ID_BROADCAST,
+                    bytes = "Original message".encodeToByteArray().toByteString(),
+                    dataType = PortNum.TEXT_MESSAGE_APP.value,
+                ),
+                packetId = replyId,
+            ),
+        )
+
+        val afterOriginalArrives = packetDao.getOrphanReactionsForContact(contactKey).first()
+        assertFalse(afterOriginalArrives.any { it.replyId == replyId })
+
+        val original = packetDao.getMessagesFrom(contactKey).first().single { it.packet.packetId == replyId }
+        assertEquals(listOf("👍"), original.reactions.map { it.emoji })
+    }
+
+    @Test
     fun testUpsertReaction() = runTest {
         createDb()
         val reaction =
