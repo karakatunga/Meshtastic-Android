@@ -526,7 +526,15 @@ fun MessageItem(
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                     Text(
-                                        text = if (message.hopsAway >= 0) message.hopsAway.toString() else "?",
+                                        text = if (message.hopsAway >= 0) {
+                                            if (message.hopStart > 0 && message.hopLimit > 0) {
+                                                "${message.hopStart - message.hopLimit}/${message.hopStart}"
+                                            } else {
+                                                message.hopsAway.toString()
+                                            }
+                                        } else {
+                                            "?"
+                                        },
                                         style = metadataStyle,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
