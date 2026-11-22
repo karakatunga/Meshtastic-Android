@@ -31,6 +31,8 @@ import org.meshtastic.core.di.CoroutineDispatchers
 import org.meshtastic.core.model.DataPacket
 import org.meshtastic.core.model.MessageStatus
 import org.meshtastic.core.model.Node
+import org.meshtastic.core.model.NodeAddress
+import org.meshtastic.core.model.Reaction
 import org.meshtastic.core.repository.PersistedPacketId
 import org.meshtastic.core.testing.FakeDatabaseProvider
 import org.meshtastic.proto.Data
@@ -65,6 +67,51 @@ abstract class CommonPacketRepositoryTest {
     @AfterTest
     fun tearDown() {
         dbProvider.close()
+    }
+
+    @Test
+    fun `orphan reactions are grouped and duplicate node buckets are collapsed`() = runTest(testDispatcher) {
+        val myNodeNum = 42424242
+        dbProvider.currentDb.value
+            .nodeInfoDao()
+            .setMyNodeInfo(
+                MyNodeEntity(
+                    myNodeNum = myNodeNum,
+                    model = "model",
+                    firmwareVersion = "1.0",
+                    couldUpdate = false,
+                    shouldUpdate = false,
+                    currentPacketId = 0L,
+                    messageTimeoutMsec = 0,
+                    minAppVersion = 0,
+                    maxChannels = 0,
+                    hasWifi = false,
+                ),
+            )
+
+        val reaction =
+            Reaction(
+                replyId = 7654321,
+                user = User.Builder().also { it.id = "!aaaa0001" }.build(),
+                emoji = "👍",
+                timestamp = 1000L,
+                snr = null,
+                rssi = null,
+                hopsAway = 0,
+                status = MessageStatus.RECEIVED,
+                to = NodeAddress.ID_BROADCAST,
+                channel = 0,
+            )
+        // Old databases can have the same reaction in the legacy node-0 bucket and in the active node bucket.
+        repository.insertReaction(reaction, myNodeNum = 0)
+        repository.insertReaction(reaction, myNodeNum = myNodeNum)
+
+        val groups = repository.getOrphanReactions("0${NodeAddress.ID_BROADCAST}", ::testNode).first()
+
+        assertEquals(1, groups.size)
+        assertEquals(7654321, groups.single().replyId)
+        assertEquals(1, groups.single().reactions.size)
+        assertEquals("👍", groups.single().reactions.single().emoji)
     }
 
     @Test
