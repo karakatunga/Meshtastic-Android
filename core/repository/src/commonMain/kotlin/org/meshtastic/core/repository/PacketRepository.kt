@@ -299,6 +299,9 @@ interface PacketRepository {
     /** Finds all reactions associated with a specific packet ID. */
     suspend fun findReactionsWithId(packetId: Int): List<Reaction>
 
+    /** Finds reactions targeting an original message ID, whether or not that message is stored locally. */
+    suspend fun findReactionsByReplyId(replyId: Int): List<Reaction>
+
     /**
      * Updates the Store-and-Forward PlusPlus (SFPP) status for packets.
      *
