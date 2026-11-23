@@ -27,6 +27,9 @@ jobs:
           install_jetbrains_jdk: 'true'
           dependency_graph: 'disabled'
 
+      - name: Test messaging common code
+        run: ./gradlew :feature:messaging:jvmTest -Pci=true -Pkotlin.daemon.useFallbackStrategy=false --parallel --configuration-cache -Dorg.gradle.isolated-projects=false --continue
+
       - name: Build F-Droid ARM64 debug APK
         run: ./gradlew androidApp:assembleFdroidDebug -Pci=true -Pkotlin.daemon.useFallbackStrategy=false --parallel --configuration-cache -Dorg.gradle.isolated-projects=false --continue
 

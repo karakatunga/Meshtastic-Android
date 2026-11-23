@@ -55,8 +55,6 @@ import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
-import androidx.paging.compose.itemContentType
-import androidx.paging.compose.itemKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.collectLatest
@@ -125,6 +123,37 @@ internal data class MessageListPagedState(
     /** False for an archived conversation: its channel is gone, so nothing can be sent or resent into it. */
     val canSend: Boolean = true,
 )
+
+/** One chronologically ordered row in the reversed conversation list. [pagingIndex] keeps paging loads attached. */
+internal sealed interface ConversationListRow {
+    val timestampMillis: Long
+    val key: Any
+
+    data class Packet(val pagingIndex: Int, val message: Message) : ConversationListRow {
+        override val timestampMillis: Long get() = message.displayTime
+        override val key: Any get() = message.uuid
+    }
+
+    data class Orphan(val group: OrphanReactionGroup) : ConversationListRow {
+        override val timestampMillis: Long get() = group.timestamp
+        override val key: Any get() = "orphan-reaction-${group.replyId}"
+    }
+}
+
+/**
+ * Inserts orphan reactions into the loaded message timeline instead of appending them at the oldest end of the
+ * reverse-layout list. Both sources use epoch milliseconds, so the order remains stable as additional pages load.
+ */
+internal fun interleaveOrphanReactions(
+    messages: List<Message>,
+    placeholdersBefore: Int,
+    orphanReactions: List<OrphanReactionGroup>,
+): List<ConversationListRow> = buildList {
+    messages.forEachIndexed { index, message ->
+        add(ConversationListRow.Packet(placeholdersBefore + index, message))
+    }
+    orphanReactions.forEach { add(ConversationListRow.Orphan(it)) }
+}.sortedByDescending { it.timestampMillis }
 
 private fun MutableState<Set<Long>>.toggle(uuid: Long) {
     value =
@@ -235,15 +264,10 @@ private fun MessageListPagedContent(
     modifier: Modifier = Modifier,
     quickEmojis: List<String>,
 ) {
-    // Calculate unread divider position using snapshot to avoid side-effects and improve performance
-    // Optimized: Use full snapshot index to correctly match LazyColumn index range
-    val unreadDividerIndex by
-        remember(state.messages.itemCount, state.firstUnreadMessageUuid) {
-            derivedStateOf {
-                val uuid = state.firstUnreadMessageUuid ?: return@derivedStateOf null
-                state.messages.itemSnapshotList.indexOfFirst { it?.uuid == uuid }.takeIf { it != -1 }
-            }
-        }
+    val messageSnapshot = state.messages.itemSnapshotList
+    val conversationRows = remember(messageSnapshot, state.orphanReactions) {
+        interleaveOrphanReactions(messageSnapshot.items, messageSnapshot.placeholdersBefore, state.orphanReactions)
+    }
 
     // Disable animations during scroll to prevent jank/stutter
     val enableAnimations by remember { derivedStateOf { !listState.isScrollInProgress } }
@@ -275,36 +299,57 @@ private fun MessageListPagedContent(
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
             items(
-                count = state.messages.itemCount,
-                key = state.messages.itemKey { it.uuid },
-                contentType = state.messages.itemContentType { "message" },
+                count = conversationRows.size,
+                key = { index -> conversationRows[index].key },
+                contentType = { index ->
+                    when (conversationRows[index]) {
+                        is ConversationListRow.Packet -> "message"
+                        is ConversationListRow.Orphan -> "orphan-reaction"
+                    }
+                },
             ) { index ->
-                val message = state.messages[index]
-                val visuallyPrevMessage = if (index < state.messages.itemCount - 1) state.messages[index + 1] else null
-                val visuallyNextMessage = if (index > 0) state.messages[index - 1] else null
+                val row = conversationRows[index]
+                if (row is ConversationListRow.Orphan) {
+                    val previousTimestamp = conversationRows.getOrNull(index + 1)?.timestampMillis
+                    val startsNewDay = previousTimestamp?.let { !isSameLocalDay(it, row.timestampMillis) }
+                        ?: state.messages.loadState.append.endOfPaginationReached
+                    val itemModifier = if (enableAnimations) Modifier.animateItem() else Modifier
+                    Column(modifier = itemModifier) {
+                        if (startsNewDay) DateSeparator(timestampMillis = row.timestampMillis)
+                        OrphanReactionPlaceholder(
+                            group = row.group,
+                            myId = state.ourNode?.user?.id,
+                            canReact = state.canReact,
+                            onSendReaction = { emoji ->
+                                val alreadyReacted = row.group.reactions.any { reaction ->
+                                    (reaction.user.id == state.ourNode?.user?.id ||
+                                        reaction.user.id == NodeAddress.ID_LOCAL) && reaction.emoji == emoji
+                                }
+                                if (!alreadyReacted) handlers.onSendReaction(emoji, row.group.replyId)
+                            },
+                            onShowReactions = { onShowReactions(row.group.reactions) },
+                        )
+                    }
+                } else if (row is ConversationListRow.Packet) {
+                    // Access through LazyPagingItems so composing a row still triggers Paging's prefetch at the edge.
+                    val message = state.messages[row.pagingIndex] ?: row.message
+                    val visuallyPrevMessage = (conversationRows.getOrNull(index + 1) as? ConversationListRow.Packet)?.message
+                    val visuallyNextMessage = (conversationRows.getOrNull(index - 1) as? ConversationListRow.Packet)?.message
 
-                val hasSamePrev =
-                    message != null && visuallyPrevMessage != null && isSameGroup(visuallyPrevMessage, message)
-
-                val hasSameNext =
-                    message != null && visuallyNextMessage != null && isSameGroup(message, visuallyNextMessage)
-
-                if (message != null) {
-                    val isFirstUnread = state.hasUnreadMessages && unreadDividerIndex == index
+                    val hasSamePrev = visuallyPrevMessage != null && isSameGroup(visuallyPrevMessage, message)
+                    val hasSameNext = visuallyNextMessage != null && isSameGroup(message, visuallyNextMessage)
+                    val isFirstUnread = state.hasUnreadMessages && state.firstUnreadMessageUuid == message.uuid
                     val itemModifier = if (enableAnimations) Modifier.animateItem() else Modifier
                     // The separator belongs above the first message of each local day. At the top of the loaded
                     // range there is no older message to compare against, so only label it once paging has
                     // confirmed there is nothing older — otherwise the label would move as pages arrive.
                     val startsNewDay =
-                        if (visuallyPrevMessage != null) {
-                            !isSameLocalDay(visuallyPrevMessage.displayTime, message.displayTime)
-                        } else {
-                            state.messages.loadState.append.endOfPaginationReached
-                        }
+                        conversationRows.getOrNull(index + 1)?.timestampMillis?.let {
+                            !isSameLocalDay(it, message.displayTime)
+                        } ?: state.messages.loadState.append.endOfPaginationReached
 
                     if (isFirstUnread || startsNewDay) {
-                        // Wrap in Column to prevent overlapping of divider and message item
-                        // Apply animation to the container Column once
+                        // Wrap in Column to prevent overlapping of divider and message item.
                         Column(modifier = itemModifier) {
                             if (startsNewDay) DateSeparator(timestampMillis = message.displayTime)
                             if (isFirstUnread) UnreadMessagesDivider()
@@ -351,30 +396,6 @@ private fun MessageListPagedContent(
                         )
                     }
                 }
-            }
-
-            // Orphan reactions are real conversation rows, but are not persisted as synthetic messages.
-            // When the parent packet arrives, the DAO flow drops these rows while PacketEntity's relation
-            // exposes the same reactions on the original message.
-            items(
-                count = state.orphanReactions.size,
-                key = { index -> "orphan-reaction-${state.orphanReactions[index].replyId}" },
-                contentType = { "orphan-reaction" },
-            ) { index ->
-                val orphan = state.orphanReactions[index]
-                OrphanReactionPlaceholder(
-                    group = orphan,
-                    myId = state.ourNode?.user?.id,
-                    canReact = state.canReact,
-                    onSendReaction = { emoji ->
-                        val alreadyReacted = orphan.reactions.any { reaction ->
-                            (reaction.user.id == state.ourNode?.user?.id ||
-                                reaction.user.id == NodeAddress.ID_LOCAL) && reaction.emoji == emoji
-                        }
-                        if (!alreadyReacted) handlers.onSendReaction(emoji, orphan.replyId)
-                    },
-                    onShowReactions = { onShowReactions(orphan.reactions) },
-                )
             }
 
             // Loading indicator at the end (top when reversed) when loading more items

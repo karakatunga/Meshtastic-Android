@@ -19,6 +19,7 @@ package org.meshtastic.feature.messaging
 import org.meshtastic.core.model.Message
 import org.meshtastic.core.model.MessageStatus
 import org.meshtastic.core.model.Node
+import org.meshtastic.core.model.OrphanReactionGroup
 import org.meshtastic.core.ui.component.preview.NodePreviewParameterProvider
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -126,5 +127,22 @@ class MessageGroupingTest {
         val older = message(fromLocal = false, node = minnie, receivedTime = 5_000L)
         val newer = message(fromLocal = false, node = minnie, receivedTime = 1_000L)
         assertTrue(isSameGroup(older, newer))
+    }
+
+    @Test
+    fun orphanReactionRowsAreInterleavedByReceivedTime() {
+        val olderMessage = message(fromLocal = false, node = minnie, receivedTime = 1_000L)
+        val newerMessage = message(fromLocal = false, node = mickey, receivedTime = 3_000L)
+        val orphan = OrphanReactionGroup(replyId = 42, timestamp = 2_000L, reactions = emptyList())
+
+        val rows =
+            interleaveOrphanReactions(
+                messages = listOf(newerMessage, olderMessage),
+                placeholdersBefore = 0,
+                orphanReactions = listOf(orphan),
+            )
+
+        assertEquals(listOf(3_000L, 2_000L, 1_000L), rows.map { it.timestampMillis })
+        assertTrue(rows[1] is ConversationListRow.Orphan)
     }
 }
