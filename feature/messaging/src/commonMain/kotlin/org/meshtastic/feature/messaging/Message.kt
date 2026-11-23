@@ -408,8 +408,7 @@ fun MessageScreen(
         }
 
     Scaffold(
-        // Keep the composer and its formatting controls directly above the IME in edge-to-edge windows.
-        modifier = Modifier.fillMaxSize().imePadding(),
+        // The activity resizes this screen for the IME; adding imePadding here applies the keyboard inset twice.
         topBar = {
             if (inSelectionMode) {
                 ActionModeTopBar(
