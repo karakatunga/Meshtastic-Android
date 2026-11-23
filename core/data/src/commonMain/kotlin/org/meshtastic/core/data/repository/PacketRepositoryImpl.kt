@@ -33,6 +33,7 @@ import org.meshtastic.core.database.DatabaseProvider
 import org.meshtastic.core.database.dao.NodeInfoDao
 import org.meshtastic.core.database.dao.PacketDao
 import org.meshtastic.core.database.entity.PacketEntity
+import org.meshtastic.core.database.entity.belongsToContact
 import org.meshtastic.core.database.entity.toReaction
 import org.meshtastic.core.database.retryOnDbPoolFailure
 import org.meshtastic.core.di.CoroutineDispatchers
@@ -40,8 +41,10 @@ import org.meshtastic.core.model.ContactSettings
 import org.meshtastic.core.model.DataPacket
 import org.meshtastic.core.model.Message
 import org.meshtastic.core.model.MessageStatus
+import org.meshtastic.core.model.MeshViewMessage
 import org.meshtastic.core.model.Node
 import org.meshtastic.core.model.NodeAddress
+import org.meshtastic.core.model.OrphanReactionGroup
 import org.meshtastic.core.model.Reaction
 import org.meshtastic.core.repository.PersistedPacket
 import org.meshtastic.core.repository.PersistedPacketId
@@ -49,6 +52,7 @@ import org.meshtastic.core.repository.PersistedReaction
 import org.meshtastic.core.repository.PersistedReactionId
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
+import org.meshtastic.core.network.service.ApiService
 import org.meshtastic.core.database.entity.ContactSettings as ContactSettingsEntity
 import org.meshtastic.core.database.entity.Packet as RoomPacket
 import org.meshtastic.core.database.entity.ReactionEntity as RoomReaction
@@ -56,8 +60,23 @@ import org.meshtastic.core.repository.PacketRepository as SharedPacketRepository
 
 @Suppress("TooManyFunctions", "LongParameterList")
 @Single
-class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val dispatchers: CoroutineDispatchers) :
+class PacketRepositoryImpl(
+    private val dbManager: DatabaseProvider,
+    private val dispatchers: CoroutineDispatchers,
+    private val apiService: ApiService,
+) :
     SharedPacketRepository {
+
+    private val meshViewCache = mutableMapOf<Int, MeshViewMessage?>()
+
+    override suspend fun getMeshViewMessage(packetId: Int): MeshViewMessage? {
+        if (meshViewCache.containsKey(packetId)) return meshViewCache[packetId]
+        val result = try { apiService.getMeshViewPacket(packetId) }
+        catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { return null } // Retry transient connection failures on a later emission.
+        meshViewCache[packetId] = result
+        return result
+    }
 
     override fun getWaypoints(): Flow<List<DataPacket>> = dbManager
         .observeCurrentDb("PacketRepository.getWaypoints") { db -> db.packetDao().getAllWaypointsFlow() }
@@ -243,6 +262,36 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
     ): Flow<PagingData<Message>> =
         pagedMessages(contactKey, getNode) { dao -> dao.getMessagesFromPaged(contactKey, includeFiltered) }
 
+    override fun getOrphanReactions(
+        contact: String,
+        getNode: suspend (String?) -> Node,
+    ): Flow<List<OrphanReactionGroup>> =
+        dbManager
+            .observeCurrentDb("PacketRepository.getOrphanReactions") { db ->
+                val dao = db.packetDao()
+                dao.getOrphanReactionsForContact(contact).map { reactions -> dao to reactions }
+            }
+            .mapLatest { (dao, rows) ->
+                val currentNodeNum = dao.getMyNodeNum() ?: 0
+                val cachedGetNode = memoize(getNode)
+                rows
+                    .filter { it.belongsToContact(contact, currentNodeNum) }
+                    // Legacy node-0 rows can coexist with the active node's row. Prefer the active row before
+                    // deduplicating, matching PacketEntity.toMessage's normal reaction relation.
+                    .sortedBy { it.myNodeNum == 0 }
+                    .distinctBy { Triple(it.replyId, it.userId, it.emoji) }
+                    .map { it.toReaction(cachedGetNode) }
+                    .groupBy { it.replyId }
+                    .map { (replyId, grouped) ->
+                        OrphanReactionGroup(
+                            replyId = replyId,
+                            timestamp = grouped.maxOf { it.timestamp },
+                            reactions = grouped,
+                        )
+                    }
+                    .sortedByDescending { it.timestamp }
+            }
+
     private fun pagedMessages(
         contactKey: String,
         getNode: suspend (String?) -> Node,
@@ -415,6 +464,9 @@ class PacketRepositoryImpl(private val dbManager: DatabaseProvider, private val 
 
     override suspend fun findReactionsWithId(packetId: Int): List<Reaction> =
         dbManager.withReadDb { it.packetDao().findReactionsWithId(packetId) }.toReaction { null }
+
+    override suspend fun findReactionsByReplyId(replyId: Int): List<Reaction> =
+        dbManager.withReadDb { it.packetDao().findReactionsByReplyId(replyId) }.toReaction { null }
 
     override suspend fun updateSFPPStatus(
         packetId: Int,

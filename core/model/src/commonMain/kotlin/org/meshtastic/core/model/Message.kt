@@ -301,6 +301,9 @@ data class Message(
     /** Received signal strength, or null when the radio did not report one. 0 dBm is a valid reading. */
     val rssi: Int?,
     val hopsAway: Int,
+    /** Hop count metadata from the received packet. */
+    val hopStart: Int = 0,
+    val hopLimit: Int = 0,
     val replyId: Int?,
     val originalMessage: Message? = null,
     val viaMqtt: Boolean = false,
@@ -317,6 +320,8 @@ data class Message(
     val translatedText: String? = null,
     /** Whether the bubble currently displays [translatedText] instead of [text]. */
     val showTranslated: Boolean = false,
+    /** Missing reply parent recovered from MeshView; kept separate from locally received message history. */
+    val meshViewReply: MeshViewMessage? = null,
 ) {
     /**
      * Epoch millis behind the displayed [time]: mesh time when the radio stamped one, otherwise the local

@@ -19,16 +19,24 @@ package org.meshtastic.core.network.service
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
 import org.koin.core.annotation.Single
 import org.meshtastic.core.model.BootloaderOtaQuirksResponse
 import org.meshtastic.core.model.EventFirmwareResponse
 import org.meshtastic.core.model.FirmwareReleaseManifest
 import org.meshtastic.core.model.MaintenanceUf2Manifest
 import org.meshtastic.core.model.MqttRootsResponse
+import org.meshtastic.core.model.MeshViewMessage
 import org.meshtastic.core.model.NetworkDeviceHardware
 import org.meshtastic.core.model.NetworkDeviceLinksResponse
 import org.meshtastic.core.model.NetworkFirmwareNightly
@@ -99,6 +107,9 @@ interface ApiService {
      * Fetches the MQTT root directory (community roots, subdivision neighbors and geocoder segment names) the topic
      * finder places a user with. Decodes directly to the same model the bundled asset seed uses.
      */
+    /** Fetches a missing text packet from MeshView using HTTP only. */
+    suspend fun getMeshViewPacket(packetId: Int): MeshViewMessage?
+
     suspend fun getMqttRoots(): MqttRootsResponse
 }
 
@@ -139,4 +150,35 @@ class ApiServiceImpl(private val client: HttpClient) : ApiService {
         client.get("resource/maintenanceUf2").body()
 
     override suspend fun getMqttRoots(): MqttRootsResponse = client.get("resource/mqttRoots").body()
+
+    override suspend fun getMeshViewPacket(packetId: Int): MeshViewMessage? {
+        val response = client.get("https://meshview.meshtastic.es/api/packets") { parameter("packet_id", packetId.toUInt().toString()) }
+        if (response.status == HttpStatusCode.NotFound) return null
+        check(response.status.isSuccess()) { "Unexpected HTTP ${response.status} fetching MeshView packet" }
+        return decodeMeshViewMessage(response.bodyAsText(), packetId)
+    }
+}
+
+
+/** Decodes the flexible response shapes used by MeshView's packet endpoint. */
+internal fun decodeMeshViewMessage(body: String, requestedPacketId: Int): MeshViewMessage? {
+    val root = runCatching { Json.parseToJsonElement(body) }.getOrNull() ?: return null
+    val candidates = when (root) {
+        is JsonArray -> root.mapNotNull { it as? JsonObject }
+        is JsonObject -> (root["packets"] as? JsonArray)?.mapNotNull { it as? JsonObject }
+            ?: (root["results"] as? JsonArray)?.mapNotNull { it as? JsonObject } ?: listOf(root)
+        else -> emptyList()
+    }
+    fun JsonObject.value(vararg keys: String): JsonElement? = keys.firstNotNullOfOrNull { this[it] }
+    fun JsonElement?.stringValue(): String? = (this as? JsonPrimitive)?.contentOrNull
+    fun JsonObject.longValue(vararg keys: String): Long? = (value(*keys) as? JsonPrimitive)?.let { it.longOrNull ?: it.content.toLongOrNull() }
+    val packet = candidates.firstOrNull { it.longValue("packet_id", "packetId", "id")?.toInt() == requestedPacketId }
+        ?: candidates.firstOrNull()?.takeIf { candidates.size == 1 } ?: return null
+    val nested = sequenceOf("decoded", "data", "payload", "text_message").mapNotNull { packet[it] as? JsonObject }.toList()
+    val textValue = (sequenceOf(packet) + nested.asSequence()).mapNotNull { it.value("text", "message", "message_text", "payload_text", "payload").stringValue() }.firstOrNull { it.isNotBlank() } ?: return null
+    val sender = packet.value("from_name", "sender_name", "sender", "from", "from_node_id", "fromId").stringValue()
+    val rawTime = packet.longValue("rx_time", "timestamp", "time", "received_at", "created_at", "import_time_us")
+    val timestamp = rawTime?.let { when { it > 1_000_000_000_000_000L -> it / 1_000L; it > 100_000_000_000L -> it; else -> it * 1_000L } }
+    val channel = packet.value("channel_name", "channel", "channel_index").stringValue()
+    return MeshViewMessage(requestedPacketId, textValue, sender, timestamp, channel)
 }

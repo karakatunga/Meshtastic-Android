@@ -53,6 +53,8 @@ data class PacketEntity(
             snr = snr,
             rssi = rssi,
             hopsAway = hopsAway,
+            hopStart = data.hopStart,
+            hopLimit = data.hopLimit,
             read = read,
             status = data.status,
             routingError = routingError,
@@ -87,25 +89,32 @@ data class PacketEntity(
  * which they were sent. Legacy rows without addressing metadata retain the historical ID-only behavior.
  */
 @Suppress("ReturnCount")
-private fun ReactionEntity.belongsTo(packet: Packet): Boolean {
+private fun ReactionEntity.belongsTo(packet: Packet): Boolean =
+    belongsToContact(packet.contact_key, myNodeNum)
+
+/**
+ * Applies the same channel and address rules as [belongsTo] when there is no parent Packet row to inspect.
+ * [currentNodeNum] is read from the active database so legacy reaction rows (myNodeNum = 0) still identify
+ * reactions sent by this device correctly.
+ */
+@Suppress("ReturnCount")
+fun ReactionEntity.belongsToContact(contactKey: String, currentNodeNum: Int): Boolean {
     if (to == null || userId.isEmpty()) return true
 
     val sender = NodeAddress.fromString(userId)
     val recipient = NodeAddress.fromString(to)
-    val packetContact = ContactKey(packet.contact_key)
+    val packetContact = ContactKey(contactKey)
     val isLegacyInboundPkiChannel =
         packetContact.channel == NodeAddress.PKC_CHANNEL_INDEX &&
             channel == 0 &&
             status == MessageStatus.RECEIVED &&
             recipient !is NodeAddress.Broadcast
-    // A retired conversation has no live slot, so there is no index to compare against; it is frozen and receives no
-    // new packets, which leaves the addressing check below as sufficient scoping.
     if (!packetContact.isRetired && packetContact.channel != channel && !isLegacyInboundPkiChannel) return false
 
     val senderIsLocal =
         status != MessageStatus.RECEIVED ||
             sender is NodeAddress.Local ||
-            (myNodeNum != 0 && sender is NodeAddress.ByNum && sender.num == myNodeNum)
+            (currentNodeNum != 0 && sender is NodeAddress.ByNum && sender.num == currentNodeNum)
     val reactionContact = if (recipient is NodeAddress.Broadcast || senderIsLocal) recipient else sender
     return reactionContact == packetContact.address
 }

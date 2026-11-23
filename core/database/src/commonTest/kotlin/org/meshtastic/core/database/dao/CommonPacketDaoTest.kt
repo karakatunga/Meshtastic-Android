@@ -24,6 +24,7 @@ import org.meshtastic.core.database.MeshtasticDatabase
 import org.meshtastic.core.database.entity.MyNodeEntity
 import org.meshtastic.core.database.entity.Packet
 import org.meshtastic.core.database.entity.ReactionEntity
+import org.meshtastic.core.database.entity.belongsToContact
 import org.meshtastic.core.database.getInMemoryDatabaseBuilder
 import org.meshtastic.core.model.DataPacket
 import org.meshtastic.core.model.MessageStatus
@@ -459,6 +460,67 @@ abstract class CommonPacketDaoTest {
         val waypoints = packetDao.getAllWaypoints()
         assertEquals(1, waypoints.size)
         // Waypoints aren't text messages, so they don't resolve a string text.
+    }
+
+    @Test
+    fun testOrphanReactionConversationScopingMatchesMessageAssociation() {
+        val reaction =
+            ReactionEntity(
+                myNodeNum = myNodeNum,
+                replyId = 1234,
+                userId = "!12345678",
+                emoji = "👍",
+                timestamp = nowMillis,
+                status = MessageStatus.RECEIVED,
+                to = "!42424242",
+                channel = 0,
+            )
+
+        assertTrue(reaction.belongsToContact("0!12345678", myNodeNum))
+        assertFalse(reaction.belongsToContact("1!12345678", myNodeNum))
+        assertFalse(reaction.belongsToContact("0!87654321", myNodeNum))
+    }
+
+    @Test
+    fun testOrphanReactionsMoveToTheOriginalMessageWhenItArrives() = runTest {
+        createDb()
+        val contactKey = testContactKeys.first()
+        val replyId = 987654321
+        val reaction =
+            ReactionEntity(
+                myNodeNum = myNodeNum,
+                replyId = replyId,
+                userId = NodeAddress.ID_LOCAL,
+                emoji = "👍",
+                timestamp = nowMillis,
+            )
+        packetDao.insert(reaction)
+
+        val beforeOriginalArrives = packetDao.getOrphanReactionsForContact(contactKey).first()
+        assertTrue(beforeOriginalArrives.any { it.replyId == replyId })
+
+        packetDao.insert(
+            Packet(
+                uuid = 0L,
+                myNodeNum = myNodeNum,
+                port_num = PortNum.TEXT_MESSAGE_APP.value,
+                contact_key = contactKey,
+                received_time = nowMillis + 1,
+                read = true,
+                data = DataPacket(
+                    to = NodeAddress.ID_BROADCAST,
+                    bytes = "Original message".encodeToByteArray().toByteString(),
+                    dataType = PortNum.TEXT_MESSAGE_APP.value,
+                ),
+                packetId = replyId,
+            ),
+        )
+
+        val afterOriginalArrives = packetDao.getOrphanReactionsForContact(contactKey).first()
+        assertFalse(afterOriginalArrives.any { it.replyId == replyId })
+
+        val original = packetDao.getMessagesFrom(contactKey).first().single { it.packet.packetId == replyId }
+        assertEquals(listOf("👍"), original.reactions.map { it.emoji })
     }
 
     @Test

@@ -31,6 +31,8 @@ import org.meshtastic.core.di.CoroutineDispatchers
 import org.meshtastic.core.model.DataPacket
 import org.meshtastic.core.model.MessageStatus
 import org.meshtastic.core.model.Node
+import org.meshtastic.core.model.NodeAddress
+import org.meshtastic.core.model.Reaction
 import org.meshtastic.core.repository.PersistedPacketId
 import org.meshtastic.core.testing.FakeDatabaseProvider
 import org.meshtastic.proto.Data
@@ -55,16 +57,94 @@ abstract class CommonPacketRepositoryTest {
     private val dispatchers = CoroutineDispatchers(main = testDispatcher, io = testDispatcher, default = testDispatcher)
 
     protected lateinit var repository: PacketRepositoryImpl
+    protected lateinit var apiService: FakeApiService
 
     @BeforeTest
     fun setupRepo() {
         dbProvider = FakeDatabaseProvider()
-        repository = PacketRepositoryImpl(dbProvider, dispatchers)
+        apiService = FakeApiService()
+        repository = PacketRepositoryImpl(dbProvider, dispatchers, apiService)
     }
 
     @AfterTest
     fun tearDown() {
         dbProvider.close()
+    }
+
+    @Test
+    fun `MeshView message lookups cache successful results and misses`() = runTest(testDispatcher) {
+        var requestedId = 0
+        apiService.meshViewPacket = { id ->
+            requestedId = id
+            org.meshtastic.core.model.MeshViewMessage(id, "Recovered", "!12345678", 1_700_000_000_000L, "LongFast")
+        }
+
+        val first = repository.getMeshViewMessage(7654321)
+        val second = repository.getMeshViewMessage(7654321)
+
+        assertEquals(7654321, requestedId)
+        assertEquals("Recovered", first?.text)
+        assertEquals(first, second)
+        assertEquals(1, apiService.meshViewPacketCalls)
+
+        apiService.meshViewPacket = { null }
+        assertNull(repository.getMeshViewMessage(7654322))
+        assertNull(repository.getMeshViewMessage(7654322))
+        assertEquals(2, apiService.meshViewPacketCalls)
+    }
+
+    @Test
+    fun `MeshView connection failures are not cached`() = runTest(testDispatcher) {
+        apiService.meshViewPacket = { error("offline") }
+
+        assertNull(repository.getMeshViewMessage(7654323))
+        assertNull(repository.getMeshViewMessage(7654323))
+        assertEquals(2, apiService.meshViewPacketCalls)
+    }
+
+    @Test
+    fun `orphan reactions are grouped and duplicate node buckets are collapsed`() = runTest(testDispatcher) {
+        val myNodeNum = 42424242
+        dbProvider.currentDb.value
+            .nodeInfoDao()
+            .setMyNodeInfo(
+                MyNodeEntity(
+                    myNodeNum = myNodeNum,
+                    model = "model",
+                    firmwareVersion = "1.0",
+                    couldUpdate = false,
+                    shouldUpdate = false,
+                    currentPacketId = 0L,
+                    messageTimeoutMsec = 0,
+                    minAppVersion = 0,
+                    maxChannels = 0,
+                    hasWifi = false,
+                ),
+            )
+
+        val reaction =
+            Reaction(
+                replyId = 7654321,
+                user = User.Builder().also { it.id = "!aaaa0001" }.build(),
+                emoji = "👍",
+                timestamp = 1000L,
+                snr = null,
+                rssi = null,
+                hopsAway = 0,
+                status = MessageStatus.RECEIVED,
+                to = NodeAddress.ID_BROADCAST,
+                channel = 0,
+            )
+        // Old databases can have the same reaction in the legacy node-0 bucket and in the active node bucket.
+        repository.insertReaction(reaction, myNodeNum = 0)
+        repository.insertReaction(reaction, myNodeNum = myNodeNum)
+
+        val groups = repository.getOrphanReactions("0${NodeAddress.ID_BROADCAST}", ::testNode).first()
+
+        assertEquals(1, groups.size)
+        assertEquals(7654321, groups.single().replyId)
+        assertEquals(1, groups.single().reactions.size)
+        assertEquals("👍", groups.single().reactions.single().emoji)
     }
 
     @Test

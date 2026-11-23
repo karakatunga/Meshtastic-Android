@@ -648,6 +648,41 @@ interface PacketDao {
 
     @Update suspend fun update(reaction: ReactionEntity)
 
+    /** Finds reactions targeting a message ID even when the original message packet is missing. */
+    @Query(
+        """
+        SELECT * FROM reactions
+        WHERE reply_id = :replyId
+        AND (myNodeNum = 0 OR myNodeNum = (SELECT myNodeNum FROM my_node))
+        """,
+    )
+    suspend fun findReactionsByReplyId(replyId: Int): List<ReactionEntity>
+
+    /**
+     * Emits reactions whose original message packet is absent from [contact]. Room observes both tables,
+     * so inserting the original packet removes the orphan row and attaches the reaction through PacketEntity's
+     * existing @Relation.
+     */
+    @Query(
+        """
+        SELECT r.* FROM reactions r
+        WHERE r.reply_id != 0
+        AND (r.myNodeNum = 0 OR r.myNodeNum = (SELECT myNodeNum FROM my_node))
+        AND NOT EXISTS (
+            SELECT 1 FROM packet p
+            WHERE p.packet_id = r.reply_id
+                AND p.port_num = 1
+                AND p.contact_key = :contact
+                AND (p.myNodeNum = 0 OR p.myNodeNum = (SELECT myNodeNum FROM my_node))
+        )
+        ORDER BY r.timestamp DESC
+        """,
+    )
+    fun getOrphanReactionsForContact(contact: String): Flow<List<ReactionEntity>>
+
+    @Query("SELECT myNodeNum FROM my_node LIMIT 1")
+    suspend fun getMyNodeNum(): Int?
+
     @Query(
         """
         SELECT * FROM reactions 

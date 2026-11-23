@@ -201,4 +201,73 @@ class ApiServiceTest {
     fun `firmware release manifest decoder rejects malformed JSON`() {
         assertFailsWith<SerializationException> { decodeFirmwareReleaseManifest("not-json") }
     }
+
+    @Test
+    fun `MeshView packet lookup decodes a text packet by id over HTTP`() = runTest {
+        var requested: String? = null
+        val engine = MockEngine { request ->
+            requested = request.url.toString()
+            respond(content = """[{"packet_id":7654321,"from_node_id":"!abcd1234","rx_time":1730000000,"channel":"LongFast","decoded":{"text":"Recovered text"}}]""",
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        }
+        val client = HttpClient(engine)
+        try {
+            val packet = ApiServiceImpl(client).getMeshViewPacket(7654321)
+            assertEquals("https://meshview.meshtastic.es/api/packets?packet_id=7654321", requested)
+            assertEquals(7654321, packet?.packetId)
+            assertEquals("Recovered text", packet?.text)
+            assertEquals("!abcd1234", packet?.sender)
+            assertEquals(1_730_000_000_000L, packet?.timestamp)
+            assertEquals("LongFast", packet?.channel)
+        } finally { client.close() }
+    }
+
+    @Test
+    fun `MeshView empty response is treated as missing packet`() = runTest {
+        val client = HttpClient(MockEngine { respond(content = "[]") })
+        try { assertNull(ApiServiceImpl(client).getMeshViewPacket(123)) } finally { client.close() }
+    }
+
+    @Test
+    fun `MeshView lookup sends Meshtastic packet ids as unsigned values`() = runTest {
+        var requested: String? = null
+        val client = HttpClient(MockEngine { request ->
+            requested = request.url.toString()
+            respond(content = """[{"packet_id":4294967295,"text":"Unsigned ID"}]""",
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()))
+        })
+        try {
+            val packet = ApiServiceImpl(client).getMeshViewPacket(-1)
+            assertEquals("https://meshview.meshtastic.es/api/packets?packet_id=4294967295", requested)
+            assertEquals(-1, packet?.packetId)
+            assertEquals("Unsigned ID", packet?.text)
+        } finally { client.close() }
+    }
+
+    @Test
+    fun `MeshView server errors are surfaced for a later retry`() = runTest {
+        val client = HttpClient(MockEngine { respondError(HttpStatusCode.InternalServerError) })
+        try {
+            assertFailsWith<IllegalStateException> { ApiServiceImpl(client).getMeshViewPacket(123) }
+        } finally { client.close() }
+    }
+
+    @Test
+    fun `MeshView raw payload is used as recovered message text`() = runTest {
+        val client = HttpClient(MockEngine {
+            respond(
+                content = """{"packets":[{"id":777659848,"from_node_id":"!12345678","to_node_id":4294967295,"channel":"SFNarrow","portnum":1,"payload":"Ya noche","import_time_us":1730000000000000}]}""",
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        })
+        try {
+            val packet = ApiServiceImpl(client).getMeshViewPacket(777659848)
+            assertEquals("Ya noche", packet?.text)
+            assertEquals("!12345678", packet?.sender)
+            assertEquals("SFNarrow", packet?.channel)
+            assertEquals(1_730_000_000_000L, packet?.timestamp)
+        } finally {
+            client.close()
+        }
+    }
 }

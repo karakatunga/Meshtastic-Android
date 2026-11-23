@@ -47,7 +47,7 @@ class PacketTranslationRepositoryTest {
     @BeforeTest
     fun setUp() {
         dbProvider = FakeDatabaseProvider()
-        repository = PacketRepositoryImpl(dbProvider, dispatchers)
+        repository = PacketRepositoryImpl(dbProvider, dispatchers, FakeApiService())
     }
 
     @AfterTest

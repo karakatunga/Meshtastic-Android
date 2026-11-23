@@ -51,3 +51,18 @@ data class Reaction(
      */
     val transportMechanism: Int? = null,
 )
+
+
+/**
+ * Reactions whose referenced message is not currently stored in this conversation.
+ *
+ * The group is displayed as a lightweight placeholder and disappears automatically when the original
+ * message is received and the reactions become part of that message's normal relation.
+ */
+data class OrphanReactionGroup(
+    val replyId: Int,
+    val timestamp: Long,
+    val reactions: List<Reaction>,
+    /** Message content fetched from MeshView, when available. */
+    val meshViewMessage: MeshViewMessage? = null,
+)

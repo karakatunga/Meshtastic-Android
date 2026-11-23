@@ -1,0 +1,42 @@
+name: Fork Android Build
+
+on:
+  push:
+    branches:
+      - feature/show-hop-count-limit
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Gradle Setup
+        uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: 'true'
+          install_jetbrains_jdk: 'true'
+          dependency_graph: 'disabled'
+
+      - name: Test messaging common code
+        run: ./gradlew :feature:messaging:jvmTest -Pci=true -Pkotlin.daemon.useFallbackStrategy=false --parallel --configuration-cache -Dorg.gradle.isolated-projects=false --continue
+
+      - name: Build F-Droid ARM64 debug APK
+        run: ./gradlew androidApp:assembleFdroidDebug -Pci=true -Pkotlin.daemon.useFallbackStrategy=false --parallel --configuration-cache -Dorg.gradle.isolated-projects=false --continue
+
+      - name: Upload only ARM64 APK
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: meshtastic-hop-count-fdroid-arm64
+          path: androidApp/build/outputs/apk/fdroid/debug/*arm64-v8a*.apk
+          if-no-files-found: error
+          retention-days: 14

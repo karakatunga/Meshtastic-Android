@@ -20,6 +20,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
+import androidx.paging.map
 import androidx.paging.cachedIn
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.FlowPreview
@@ -33,6 +34,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
@@ -45,6 +48,7 @@ import org.meshtastic.core.model.ContactSettings
 import org.meshtastic.core.model.Message
 import org.meshtastic.core.model.Node
 import org.meshtastic.core.model.NodeAddress
+import org.meshtastic.core.model.OrphanReactionGroup
 import org.meshtastic.core.repository.ActiveConversationTracker
 import org.meshtastic.core.repository.ConnectionStateProvider
 import org.meshtastic.core.repository.CustomEmojiPrefs
@@ -203,6 +207,15 @@ class MessageViewModel(
         packetRepository.getContactSettings().stateInWhileSubscribed(initialValue = emptyMap())
 
     private val contactKeyForPagedMessages: MutableStateFlow<String?> = MutableStateFlow(null)
+
+    /** Reactions waiting for an original packet; the flow follows conversation and active database changes. */
+    val orphanReactions: StateFlow<List<OrphanReactionGroup>> =
+        contactKeyForPagedMessages
+            .filterNotNull()
+            .flatMapLatest { contactKey -> packetRepository.getOrphanReactions(contactKey, ::getNode) }
+            .mapLatest { groups -> groups.map { group -> group.copy(meshViewMessage = packetRepository.getMeshViewMessage(group.replyId)) } }
+            .stateInWhileSubscribed(emptyList())
+
     private val pagedMessagesForContactKey: Flow<PagingData<Message>> =
         combine(contactKeyForPagedMessages.filterNotNull(), _showFiltered, contactSettings) {
                 contactKey,
@@ -217,6 +230,7 @@ class MessageViewModel(
             .flatMapLatest { (contactKey, includeFiltered) ->
                 packetRepository.getMessagesFromPaged(contactKey, includeFiltered, ::getNode)
             }
+            .map { pagingData -> pagingData.map { attachMeshViewReply(it) } }
             .cachedIn(viewModelScope)
 
     val frequentEmojis: List<String>
@@ -359,6 +373,14 @@ class MessageViewModel(
             contactKeyForPagedMessages.value = contactKey
         }
         return packetRepository.getMessagesFrom(contactKey, limit = limit, getNode = ::getNode)
+            .map { messages -> messages.map { attachMeshViewReply(it) } }
+    }
+
+    private suspend fun attachMeshViewReply(message: Message): Message {
+        val replyId = message.replyId?.takeIf { it != 0 }
+        if (message.originalMessage != null || replyId == null) return message
+        val recovered = packetRepository.getMeshViewMessage(replyId) ?: return message
+        return message.copy(meshViewReply = recovered)
     }
 
     fun toggleShowQuickChat() {
