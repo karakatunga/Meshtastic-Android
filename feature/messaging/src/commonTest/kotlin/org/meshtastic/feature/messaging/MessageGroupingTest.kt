@@ -22,6 +22,7 @@ import org.meshtastic.core.model.Node
 import org.meshtastic.core.model.OrphanReactionGroup
 import org.meshtastic.core.ui.component.preview.NodePreviewParameterProvider
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
